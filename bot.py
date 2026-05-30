@@ -8,7 +8,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 
 # ================= CONFIG =================
-BOT_TOKEN = "8864537390:AAGOacBUHmfNfemBSDESpKHATO2QB79aWUU"
+BOT_TOKEN = "8849528575:AAFJByyjdMfpkHqHIf_Rcvt13ZUaVNKe6fw"
 
 CHANNEL = "@socialhublk1"
 GROUP = "@SOCIAL_HUB_LK2"
@@ -170,7 +170,7 @@ async def addadmin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ADMIN_IDS.add(new_id)
     save_admins(ADMIN_IDS)
 
-    await update.message.reply_text("✅ Admin added ��")
+    await update.message.reply_text("✅ Admin added 👑")
 
 
 # ================= REMOVE ADMIN =================
