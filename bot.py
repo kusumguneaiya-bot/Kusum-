@@ -18,15 +18,15 @@ OWNER_ID = 6554061816
 
 ADMIN_FILE = "admins.json"
 STATS_FILE = "stats.json"
+DOWNLOAD_DIR = "downloads"
+
+# Create downloads directory if it doesn't exist
+os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
 # ================= LOGGING =================
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('bot.log'),
-        logging.StreamHandler()
-    ]
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
@@ -35,12 +35,26 @@ def load_stats():
     try:
         with open(STATS_FILE, "r") as f:
             return json.load(f)
-    except:
-        return {"total_users": 0, "total_downloads": 0, "start_time": str(datetime.now())}
+    except FileNotFoundError:
+        return {
+            "total_users": 0, 
+            "total_downloads": 0, 
+            "start_time": str(datetime.now())
+        }
+    except Exception as e:
+        logger.error(f"Error loading stats: {e}")
+        return {
+            "total_users": 0, 
+            "total_downloads": 0, 
+            "start_time": str(datetime.now())
+        }
 
 def save_stats(stats):
-    with open(STATS_FILE, "w") as f:
-        json.dump(stats, f, indent=4)
+    try:
+        with open(STATS_FILE, "w") as f:
+            json.dump(stats, f, indent=4)
+    except Exception as e:
+        logger.error(f"Error saving stats: {e}")
 
 STATS = load_stats()
 
@@ -49,12 +63,20 @@ def load_admins():
     try:
         with open(ADMIN_FILE, "r") as f:
             return set(json.load(f))
-    except:
-        return {OWNER_ID, 8171368318, 8538967590}
+    except FileNotFoundError:
+        default_admins = {OWNER_ID, 8171368318, 8538967590}
+        save_admins(default_admins)
+        return default_admins
+    except Exception as e:
+        logger.error(f"Error loading admins: {e}")
+        return {OWNER_ID}
 
 def save_admins(admins):
-    with open(ADMIN_FILE, "w") as f:
-        json.dump(list(admins), f)
+    try:
+        with open(ADMIN_FILE, "w") as f:
+            json.dump(list(admins), f)
+    except Exception as e:
+        logger.error(f"Error saving admins: {e}")
 
 ADMIN_IDS = load_admins()
 
@@ -68,7 +90,7 @@ def is_owner(user_id):
 # ================= UI SYSTEM =================
 def ui_start():
     return (
-        "✨ 𝗦𝗢𝗖𝗜𝗔𝗟 𝗛𝗨𝗕 𝗗𝗢𝗪𝗡𝗟𝗢𝗔𝗗𝗘𝗥 ✨\n\n"
+        "✨ SOCIAL HUB DOWNLOADER ✨\n\n"
         "🎬 Send any video link\n"
         "⚡ Fast HD Download\n"
         "🔥 TikTok | Instagram | Facebook | YouTube"
@@ -81,11 +103,13 @@ def ui_done():
     return "✅ Download complete 🎬"
 
 def ui_error(error_msg=""):
-    return f"❌ Failed to download{f': {error_msg}' if error_msg else ''}"
+    if error_msg:
+        return f"❌ Failed to download: {error_msg}"
+    return "❌ Failed to download"
 
 def ui_admin():
     return (
-        "🛠 𝗔𝗗𝗠𝗜𝗡 𝗣𝗔𝗡𝗘𝗟\n\n"
+        "🛠 ADMIN PANEL\n\n"
         "➕ /addadmin <id>\n"
         "➖ /removeadmin <id>\n"
         "👑 /admins\n"
@@ -112,13 +136,12 @@ async def check_join(bot, user_id):
 # ================= DOWNLOAD =================
 def download_video(url):
     try:
-        filename = f"downloads/{uuid.uuid4()}.mp4"
-        os.makedirs("downloads", exist_ok=True)
+        filename = os.path.join(DOWNLOAD_DIR, f"{uuid.uuid4()}.mp4")
 
         ydl_opts = {
-            "outtmpl": filename,
+            "outtmpl": filename[:-4],  # Remove .mp4 extension
             "format": "best[ext=mp4]/best",
-            "quiet": False,
+            "quiet": True,
             "noplaylist": True,
             "socket_timeout": 30,
             "http_headers": {
@@ -127,14 +150,16 @@ def download_video(url):
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            logger.info(f"Downloading: {url}")
-            ydl.download([url])
-
-        if os.path.exists(filename):
-            logger.info(f"Downloaded: {filename}")
-            return filename
-        else:
-            return None
+            logger.info(f"Starting download: {url}")
+            info = ydl.extract_info(url, download=True)
+            downloaded_file = ydl.prepare_filename(info)
+            
+            if os.path.exists(downloaded_file):
+                logger.info(f"Downloaded successfully: {downloaded_file}")
+                return downloaded_file
+            else:
+                logger.error(f"File not found after download: {downloaded_file}")
+                return None
             
     except Exception as e:
         logger.error(f"Download error: {str(e)}")
@@ -147,8 +172,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"User started: {user.id} - {user.first_name}")
     
     keyboard = [
-        [InlineKeyboardButton("📢 Join Channel", url=f"https://t.me/socialhublk1")],
-        [InlineKeyboardButton("👥 Join Group", url=f"https://t.me/SOCIAL_HUB_LK2")]
+        [InlineKeyboardButton("📢 Join Channel", url="https://t.me/socialhublk1")],
+        [InlineKeyboardButton("👥 Join Group", url="https://t.me/SOCIAL_HUB_LK2")]
     ]
 
     await update.message.reply_text(
@@ -180,19 +205,31 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # PROCESSING
     msg = await update.message.reply_text("⏳ Processing")
-    for i in range(2):
-        await asyncio.sleep(1)
-        await msg.edit_text("⏳ Processing.")
-        await asyncio.sleep(1)
-        await msg.edit_text("⏳ Processing..")
-        await asyncio.sleep(1)
-        await msg.edit_text("⏳ Processing...")
-
+    
     try:
+        for i in range(2):
+            await asyncio.sleep(1)
+            await msg.edit_text("⏳ Processing.")
+            await asyncio.sleep(1)
+            await msg.edit_text("⏳ Processing..")
+            await asyncio.sleep(1)
+            await msg.edit_text("⏳ Processing...")
+
         file = download_video(text)
 
         if file and os.path.exists(file):
-            await update.message.reply_video(video=open(file, "rb"))
+            file_size = os.path.getsize(file) / (1024 * 1024)  # Size in MB
+            
+            if file_size > 2048:  # 2GB limit for Telegram
+                await update.message.reply_text(
+                    f"❌ File too large ({file_size:.1f}MB). Telegram limit is 2GB"
+                )
+                os.remove(file)
+                return
+            
+            with open(file, "rb") as video_file:
+                await update.message.reply_video(video=video_file)
+            
             os.remove(file)
             await update.message.reply_text(ui_done())
             
@@ -202,6 +239,7 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.info(f"Download successful for user: {user.id}")
         else:
             await update.message.reply_text(ui_error("Could not download file"))
+            logger.warning(f"Download failed for user {user.id}")
 
     except Exception as e:
         error_msg = str(e)[:50]
@@ -236,6 +274,9 @@ async def addadmin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"✅ Admin {new_id} added 👑")
     except ValueError:
         await update.message.reply_text("❌ Invalid user ID")
+    except Exception as e:
+        logger.error(f"Error adding admin: {e}")
+        await update.message.reply_text("❌ Error adding admin")
 
 
 # ================= REMOVE ADMIN =================
@@ -256,6 +297,9 @@ async def removeadmin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"🗑 Admin {rem_id} removed")
     except ValueError:
         await update.message.reply_text("❌ Invalid user ID")
+    except Exception as e:
+        logger.error(f"Error removing admin: {e}")
+        await update.message.reply_text("❌ Error removing admin")
 
 
 # ================= LIST ADMINS =================
@@ -264,8 +308,11 @@ async def admins(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Admin only command")
         return
 
-    admin_list = "\n".join(str(x) for x in ADMIN_IDS)
-    await update.message.reply_text(f"👑 Admin List:\n{admin_list}")
+    if ADMIN_IDS:
+        admin_list = "\n".join(f"• {x}" for x in sorted(ADMIN_IDS))
+        await update.message.reply_text(f"👑 Admin List:\n{admin_list}")
+    else:
+        await update.message.reply_text("👑 No admins found")
 
 
 # ================= STATS =================
@@ -275,7 +322,7 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     stats_text = (
-        f"📊 𝗕𝗢𝗧 𝗦𝗧𝗔𝗧𝗦\n\n"
+        f"📊 BOT STATS\n\n"
         f"👥 Total Users: {STATS.get('total_users', 0)}\n"
         f"⬇️ Total Downloads: {STATS.get('total_downloads', 0)}\n"
         f"⏱️ Running Since: {STATS.get('start_time', 'N/A')}\n"
@@ -294,12 +341,19 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     msg = " ".join(context.args)
-    await update.message.reply_text(f"📢 Broadcast set:\n{msg}\n\n(Note: Multi-user broadcast requires database)")
+    await update.message.reply_text(f"📢 Broadcast:\n{msg}")
+
+
+# ================= ERROR HANDLER =================
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    logger.error(f"Update caused error: {context.error}")
 
 
 # ================= MAIN =================
 def main():
+    logger.info("=" * 50)
     logger.info("🚀 Starting Telegram Bot...")
+    logger.info("=" * 50)
     
     app = Application.builder().token(BOT_TOKEN).build()
 
@@ -315,15 +369,20 @@ def main():
     # Message handler
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
 
+    # Error handler
+    app.add_error_handler(error_handler)
+
     logger.info("✅ Bot handlers configured")
-    print("🚀 BOT RUNNING...")
+    print("\n🚀 BOT RUNNING...\n")
     
     try:
         app.run_polling()
     except KeyboardInterrupt:
         logger.info("Bot stopped by user")
+        print("\n✅ Bot stopped gracefully")
     except Exception as e:
         logger.error(f"Fatal error: {e}")
+        print(f"\n❌ Fatal error: {e}")
 
 
 if __name__ == "__main__":
